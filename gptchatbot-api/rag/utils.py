@@ -64,7 +64,7 @@ def ocr_image(img):
 # Main extraction function
 # =========================
 
-def extract_text(file_name, file_bytes):
+def extract_text(file_name, file_bytes, sec=False):
 
     filename = file_name.lower()
     extension = Path(filename).suffix
@@ -157,7 +157,7 @@ def extract_text(file_name, file_bytes):
     # VECTOR TEXT + OCR SCANNED PAGES
     # =========================================================
 
-    elif extension == ".pdf":
+    elif extension == ".pdf" and not sec:
 
         output = []
 
@@ -206,6 +206,48 @@ def extract_text(file_name, file_bytes):
 
         return "\n".join(output).strip()
 
+    elif extension == ".pdf" and sec:
+        output = []
+
+        pdf = fitz.open(
+            stream=file_bytes,
+            filetype="pdf"
+        )
+
+        try:
+            for page_number, page in enumerate(pdf, start=1):
+
+                page_text = page.get_text("text").strip()
+
+                if not page_text:
+
+                    pix = page.get_pixmap(
+                        matrix=fitz.Matrix(1.5, 1.5),
+                        colorspace=fitz.csRGB,
+                        alpha=False,
+                    )
+
+                    img = np.frombuffer(
+                        pix.samples,
+                        dtype=np.uint8,
+                    ).reshape(
+                        pix.height,
+                        pix.width,
+                        3,
+                    )
+
+                    page_text = ocr_image(img)
+
+                if page_text:
+                    output.append({
+                        "page_number": page_number,
+                        "content": page_text.strip(),
+                    })
+
+        finally:
+            pdf.close()
+
+        return output
 
     # =========================================================
     # IMAGE FILES

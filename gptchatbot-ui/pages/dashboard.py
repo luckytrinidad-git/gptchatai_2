@@ -38,7 +38,7 @@ regional_data = pd.DataFrame({
 # =========================
 
 st.title("Dashboard")
-st.markdown("Real-time monitoring of BIR Citizen's Charter engagement and Regional Compliance.")
+st.markdown("Real-time monitoring of SEC Citizen's Charter engagement and Regional Compliance.")
 
 # --- TOP METRICS ROW ---
 col1, col2, col3, col4 = st.columns(4)

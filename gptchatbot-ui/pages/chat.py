@@ -22,6 +22,7 @@ ENDPOINTS = {
     "openai": API_URL + "/openai/ask-openai",
     "internal": API_URL + "/rag/ask-bir",
     "revie": API_URL + "/revie/ask-revie",
+    "sec": API_URL + "/sec/ask-sec",
 }
 
 # =========================
@@ -38,14 +39,18 @@ st.title("Chat Assistant")
 with st.sidebar:
     with st.container():
         
-        response = requests.get(f"{GENERAL_API_URL}/agents",
-        headers={
-            "X-API-Key": API_KEY
-        })
-        agents = response.json()
+        # response = requests.get(f"{GENERAL_API_URL}/agents",
+        # headers={
+        #     "X-API-Key": API_KEY
+        # })
+        # agents = response.json()
+        # agents = [
+        #     {"id": -1, "agent": "General"},
+        # ] + agents
+        
         agents = [
-            {"id": -1, "agent": "General"},
-        ] + agents
+            {"id":5, "agent":"SEC"}
+        ]
         
         selected_agent = st.selectbox(
             "Agent",
@@ -97,6 +102,21 @@ if prompt := st.chat_input("Ask about anything..."):
                 # --- NEW ENDPOINT LOGIC WITH TERMINAL PRINTS ---
                 if model == "Revie":
                     endpoint = ENDPOINTS["revie"]
+                    print(f"\n[DEBUG] Model Selected: {model}")
+                    print(f"[DEBUG] Calling Endpoint: {endpoint}")
+                    
+                    payload = {
+                        "prompt": prompt,
+                        "agent": model,
+                        "history": json.dumps(st.session_state.messages[-10:])
+                    }
+                    response = requests.post(endpoint, 
+                    headers={
+                        "X-API-Key": API_KEY
+                    },json=payload, timeout=180)
+                    
+                elif model == "SEC":
+                    endpoint = ENDPOINTS["sec"]
                     print(f"\n[DEBUG] Model Selected: {model}")
                     print(f"[DEBUG] Calling Endpoint: {endpoint}")
                     

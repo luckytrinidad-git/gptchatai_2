@@ -21,7 +21,7 @@ except ImportError:
 # 2. UI CONFIGURATION
 # =========================
 # set_page_config MUST be the first streamlit command
-st.set_page_config(page_title="Audit Log - BIR AI System", layout="wide")
+st.set_page_config(page_title="Audit Log - SEC AI System", layout="wide")
 hide_running_man()
 
 # =========================

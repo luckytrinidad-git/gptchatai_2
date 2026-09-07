@@ -4,7 +4,7 @@ services:
 
   api:
     build: ./gptchatbot-api
-    container_name: birgptchatbot-api
+    container_name: secgptchatbot-api
     ports:
       - "8000:8000"
     volumes:
@@ -21,7 +21,7 @@ services:
 
   celery:
     build: ./gptchatbot-api
-    container_name: birgptchatbot-celery
+    container_name: secgptchatbot-celery
     command: celery -A gptchatbot worker --loglevel=info
     volumes:
       - ./gptchatbot-api:/app
@@ -37,7 +37,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: birgptchatbot-redis
+    container_name: secgptchatbot-redis
     ports:
       - "6379:6379"
     restart: always
@@ -45,7 +45,7 @@ services:
 
   ui:
     build: ./gptchatbot-ui
-    container_name: birgptchatbot-ui
+    container_name: secgptchatbot-ui
     ports:
       - "8001:8001"
     volumes:

@@ -49,7 +49,7 @@ else:
 # =========================
 # Each Page points to a separate .py file in your /pages folder
 pages = [
-    st.Page("pages/dashboard.py", title="Dashboard", icon=":material/dashboard:", default=True),
+    # st.Page("pages/dashboard.py", title="Dashboard", icon=":material/dashboard:", default=True),
     st.Page("pages/chat.py", title="Chat Assistant", icon=":material/chat:"),
     st.Page("pages/history.py", title="Recent Prompts", icon=":material/history:"),
     st.Page("pages/kx_topics.py", title="KX Topics", icon=":material/topic:"),

@@ -6,7 +6,7 @@ services:
     build: ./gptchatbot-api
     container_name: secgptchatbot-api
     ports:
-      - "8000:8000"
+      - "8002:8002"
     volumes:
       - ./gptchatbot-api:/app
     environment:
@@ -47,7 +47,7 @@ services:
     build: ./gptchatbot-ui
     container_name: secgptchatbot-ui
     ports:
-      - "8001:8001"
+      - "8003:8003"
     volumes:
       - ./gptchatbot-ui:/app
       - ./gptchatbot-api:/gptchatbot-api

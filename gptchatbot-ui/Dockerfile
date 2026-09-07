@@ -9,6 +9,6 @@ RUN pip install psycopg2-binary
 
 COPY . .
 
-EXPOSE 8003
+EXPOSE 8001
 
-CMD ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=8003"]
+CMD ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=8001"]

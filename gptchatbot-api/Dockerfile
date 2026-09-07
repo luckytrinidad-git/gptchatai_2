@@ -22,10 +22,10 @@ RUN pip install psycopg2-binary gunicorn
 
 COPY . .
 
-EXPOSE 8002
+EXPOSE 8000
 
 CMD ["gunicorn", "gptchatbot.wsgi:application", \
-     "--bind", "0.0.0.0:8002", \
+     "--bind", "0.0.0.0:8000", \
      "--workers", "3", \
      "--timeout", "180", \
      "--capture-output", \

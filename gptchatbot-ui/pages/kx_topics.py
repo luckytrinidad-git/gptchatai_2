@@ -40,7 +40,7 @@ with st.expander("Ingest New Document", expanded=True):
                 "Agent Responsible",
                 options=[
                     {
-                        "id": 5,
+                        "id": 2,
                         "agent": "SEC"
                     }
                 ],

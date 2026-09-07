@@ -49,7 +49,7 @@ with st.sidebar:
         # ] + agents
         
         agents = [
-            {"id":5, "agent":"SEC"}
+            {"id":2, "agent":"SEC"}
         ]
         
         selected_agent = st.selectbox(

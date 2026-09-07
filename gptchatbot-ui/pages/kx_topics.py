@@ -141,9 +141,10 @@ with st.expander("Ingest New Document", expanded=True):
 
                         if result.get("status") == "success":
                             log_action(
-                                action="Upload",
-                                status="Success",
-                                details=f"Successfully processed: {title}"
+                                username=uploaded_by, 
+                                action=f"Ingested Doc: {title}", 
+                                module="KX Topics: Knowledge Manager",
+                                status="success"
                             )
 
                             status.update(
@@ -171,9 +172,10 @@ with st.expander("Ingest New Document", expanded=True):
                             st.error(f"Ingestion Error: {error_message}")
 
                             log_action(
-                                action="Upload",
-                                status="Failed",
-                                details=error_message
+                                username=uploaded_by, 
+                                action=f"Failed Ingestion: {title}", 
+                                module="KX Topics: Knowledge Manager",
+                                status="failed"
                             )
 
                     except Exception as e:

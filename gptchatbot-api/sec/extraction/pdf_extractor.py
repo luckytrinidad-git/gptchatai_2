@@ -13,16 +13,22 @@ import tempfile
 
 MIN_TEXT_LENGTH = 30
 
-openai_client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY"),
-    max_retries=0,
-    timeout=120.0,
+OPENAI_MODEL = os.getenv(
+    "SEC_EXTRACTION_MODEL",
+    "gpt-5.6-luna",
 )
 
 EMBEDDING_MODEL = os.getenv(
     "SEC_EMBEDDING_MODEL",
     "text-embedding-3-small",
 )
+
+openai_client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    max_retries=0,
+    timeout=120.0,
+)
+
 
 ocr = RapidOCR()
 def ocr_image(img):

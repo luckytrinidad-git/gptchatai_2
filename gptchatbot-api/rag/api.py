@@ -17,13 +17,14 @@ from rag.qdrant_backend import run_exact_document_lookup, run_semantic_search, s
 
 from rag.schemas import PromptInput
 from rag.models import BIRDocument
-from rag.utils import extract_text, chunk_text, upload_to_ipfs
+from rag.utils import extract_text, chunk_text
 from rag.embeddings import get_embedding
+from general.utilities.ipfs_utilities import upload_to_ipfs
 from chatbot_models.rag_model import openai_gpt45
 from chatbot_models.openai_model import openai_gpt45 as bir_openai_gpt45
 
 import os
-from rag.utils import build_title_variants, normalize_document_number, extract_document_reference, DOCUMENT_MAP 
+from rag.utils import extract_document_reference 
 
 router = Router(tags=["Internal BIR AI"])
 

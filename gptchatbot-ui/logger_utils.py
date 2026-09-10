@@ -13,7 +13,6 @@ GENERAL_API_URL = f"{API_URL}/general"
 def log_action(username, action, module, status="success"):
     
     payload = {
-        "date_time": datetime.now(), 
         "username": username, 
         "action": action, 
         "module": module, 
@@ -25,6 +24,6 @@ def log_action(username, action, module, status="success"):
         headers={
             "X-API-Key": API_KEY
         },
-        data=payload,
+        json=payload,
         timeout=300
     )

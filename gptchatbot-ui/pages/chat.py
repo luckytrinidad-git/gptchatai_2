@@ -100,22 +100,22 @@ if prompt := st.chat_input("Ask about anything..."):
                 # files = None
 
                 # --- NEW ENDPOINT LOGIC WITH TERMINAL PRINTS ---
-                if model == "Revie":
-                    endpoint = ENDPOINTS["revie"]
-                    print(f"\n[DEBUG] Model Selected: {model}")
-                    print(f"[DEBUG] Calling Endpoint: {endpoint}")
+                # if model == "Revie":
+                #     endpoint = ENDPOINTS["revie"]
+                #     print(f"\n[DEBUG] Model Selected: {model}")
+                #     print(f"[DEBUG] Calling Endpoint: {endpoint}")
                     
-                    payload = {
-                        "prompt": prompt,
-                        "agent": model,
-                        "history": json.dumps(st.session_state.messages[-10:])
-                    }
-                    response = requests.post(endpoint, 
-                    headers={
-                        "X-API-Key": API_KEY
-                    },json=payload, timeout=180)
+                #     payload = {
+                #         "prompt": prompt,
+                #         "agent": model,
+                #         "history": json.dumps(st.session_state.messages[-10:])
+                #     }
+                #     response = requests.post(endpoint, 
+                #     headers={
+                #         "X-API-Key": API_KEY
+                #     },json=payload, timeout=180)
                     
-                elif model == "SEC":
+                if model == "SEC":
                     endpoint = ENDPOINTS["sec"]
                     print(f"\n[DEBUG] Model Selected: {model}")
                     print(f"[DEBUG] Calling Endpoint: {endpoint}")
@@ -131,48 +131,48 @@ if prompt := st.chat_input("Ask about anything..."):
                     },json=payload, timeout=180)
                     
                 # --- CASE 2: EXTERNAL SOURCE ---
-                elif model == "General":
-                    endpoint = ENDPOINTS["openai"]
-                    payload = {
-                        "prompt": prompt, 
-                        "agent": model, 
-                        "history": json.dumps(st.session_state.messages[-10:])
-                    }
+                # elif model == "General":
+                #     endpoint = ENDPOINTS["openai"]
+                #     payload = {
+                #         "prompt": prompt, 
+                #         "agent": model, 
+                #         "history": json.dumps(st.session_state.messages[-10:])
+                #     }
     
-                    if uploaded_file:
-                        # Standard file upload request
-                        files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-                        response = requests.post(endpoint, 
-                        headers={
-                            "X-API-Key": API_KEY
-                        },data=payload, files=files, timeout=180)
-                    else:
-                        try:
-                            response = requests.post(endpoint, 
-                        headers={
-                            "X-API-Key": API_KEY
-                        },data=payload, timeout=180)
-                        except Exception:
-                        # Fallback for strict backends:
-                            response = requests.post(endpoint, 
-                            headers={
-                                "X-API-Key": API_KEY
-                            },data=payload, files={'file': ('', b'')}, timeout=180)
+                #     if uploaded_file:
+                #         # Standard file upload request
+                #         files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
+                #         response = requests.post(endpoint, 
+                #         headers={
+                #             "X-API-Key": API_KEY
+                #         },data=payload, files=files, timeout=180)
+                #     else:
+                #         try:
+                #             response = requests.post(endpoint, 
+                #         headers={
+                #             "X-API-Key": API_KEY
+                #         },data=payload, timeout=180)
+                #         except Exception:
+                #         # Fallback for strict backends:
+                #             response = requests.post(endpoint, 
+                #             headers={
+                #                 "X-API-Key": API_KEY
+                #             },data=payload, files={'file': ('', b'')}, timeout=180)
 
-                else:
-                    endpoint = ENDPOINTS["internal"]
-                    print(f"\n[DEBUG] Model Selected: {model}")
-                    print(f"[DEBUG] Calling Endpoint: {endpoint}")
+                # else:
+                #     endpoint = ENDPOINTS["internal"]
+                #     print(f"\n[DEBUG] Model Selected: {model}")
+                #     print(f"[DEBUG] Calling Endpoint: {endpoint}")
                     
-                    payload = {
-                        "prompt": prompt,
-                        "agent": model_id,
-                        "history": json.dumps(st.session_state.messages[-10:])
-                    }
-                    response = requests.post(endpoint, 
-                        headers={
-                            "X-API-Key": API_KEY
-                        },data=payload, timeout=180)
+                #     payload = {
+                #         "prompt": prompt,
+                #         "agent": model_id,
+                #         "history": json.dumps(st.session_state.messages[-10:])
+                #     }
+                #     response = requests.post(endpoint, 
+                #         headers={
+                #             "X-API-Key": API_KEY
+                #         },data=payload, timeout=180)
                 
                 # 4. ROBUST RESPONSE PARSING
                 if response.status_code == 200:
@@ -184,13 +184,16 @@ if prompt := st.chat_input("Ask about anything..."):
                         res_json.get("text") or 
                         "Error: Response format not recognized."
                     )
+                    conversation_context = res_json.get("conversation_context")
                     status_log = "success"
                 else:
                     text = f"API Error {response.status_code}: {response.text}"
+                    conversation_context = None
                     status_log = "failed"
             
             except Exception as e:
                 text = f"Connection error: {e}"
+                conversation_context = None
                 status_log = "error"
 
         # 5. Typewriter Effect
@@ -212,5 +215,11 @@ if prompt := st.chat_input("Ask about anything..."):
         )
 
         # 7. Save Assistant Response and Rerun
-        st.session_state.messages.append({"role": "assistant", "content": text})
+        st.session_state.messages.append(
+            {
+                "role": "assistant", 
+                "content": text, 
+                "conversation_context": conversation_context
+             }
+        )
         st.rerun()

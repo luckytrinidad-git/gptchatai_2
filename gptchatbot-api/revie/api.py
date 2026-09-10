@@ -6,8 +6,8 @@ from ninja import File
 from ninja.files import UploadedFile
 from ninja import Router, Form, File
 from rag.embeddings import get_embedding
-from rag.utils import upload_to_ipfs
 from rag.schemas import PromptInput
+from general.utilities.ipfs_utilities import upload_to_ipfs
 
 from revie.tasks import generate_revie_embeddings, import_revie_data
 from revie.utils import search_revie_knowledge_base

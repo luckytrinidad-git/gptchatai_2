@@ -281,485 +281,560 @@ def search_sec_knowledge_base(
     limit=5,
 ):
     """
-    Search SEC knowledge using:
+    Hybrid SEC knowledge-base retrieval.
 
-    1. Metadata filtering through kx_topics
-    2. PostgreSQL full-text search
-    3. pgvector similarity search
+    Retrieval flow:
 
-    kx_topics contains the authoritative submission metadata:
-        company_name
-        sec_no
-        form_type
-        period_covered
-        topic_title
-        file_name
+        User question
+             ↓
+        Metadata filters
+             ↓
+        ┌───────────────────┐
+        │                   │
+        ↓                   ↓
+    Vector search       FTS search
+      top N               top N
+        │                   │
+        └─────────┬─────────┘
+                  ↓
+          Merge / deduplicate
+                  ↓
+           Hybrid scoring
+                  ↓
+             Top `limit`
 
-    sec_document contains:
-        content
-        page_number
-        section_name
-        chunk_index
-        metadata
-        embedding
-        search_vector
+    Vector retrieval is semantic.
+    FTS retrieval is keyword-based.
+
+    A document can enter the candidate pool through either
+    retrieval method.
     """
+
+    # ---------------------------------------------------------
+    # Normalize inputs
+    # ---------------------------------------------------------
+
+    user_question = (user_question or "").strip()
+    company_name = (company_name or "").strip()
+    sec_no = (sec_no or "").strip()
+    form_type = (form_type or "").strip()
+    period_covered = (period_covered or "").strip()
+    document = (document or "").strip()
+
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 5
+
+    if limit <= 0:
+        limit = 5
+
+    # Retrieve more candidates independently before final ranking.
+    #
+    # Example:
+    # limit = 5
+    # candidate_limit = 15
+    #
+    # This gives vector search 15 opportunities and FTS 15
+    # opportunities before we reduce the result to the final 5.
+    candidate_limit = max(limit * 3, 10)
+
+    # ---------------------------------------------------------
+    # Validate / normalize embedding
+    # ---------------------------------------------------------
 
     if not query_embedding:
         return {
             "contexts": [],
             "results": [],
             "match_type": "none",
-            "best_score": 0,
+            "best_score": 0.0,
         }
 
-    # =========================================================
-    # NORMALIZE PARAMETERS
-    # =========================================================
+    # Some embedding helpers return:
+    #
+    # [
+    #     [0.1, 0.2, ...]
+    # ]
+    #
+    # while this function expects:
+    #
+    # [
+    #     0.1, 0.2, ...
+    # ]
+    #
+    # Unwrap a single nested embedding.
 
-    company_name = (
-        company_name.strip()
-        if company_name
-        else None
-    )
+    if (
+        isinstance(query_embedding, (list, tuple))
+        and len(query_embedding) == 1
+        and isinstance(query_embedding[0], (list, tuple))
+    ):
+        query_embedding = query_embedding[0]
 
-    sec_no = (
-        sec_no.strip()
-        if sec_no
-        else None
-    )
+    try:
+        query_embedding = [
+            float(value)
+            for value in query_embedding
+        ]
 
-    form_type = (
-        form_type.strip()
-        if form_type
-        else None
-    )
+    except (TypeError, ValueError) as exc:
 
-    period_covered = (
-        period_covered.strip()
-        if period_covered
-        else None
-    )
+        print("=" * 70)
+        print("SEC EMBEDDING NORMALIZATION ERROR")
+        print("Embedding type :", type(query_embedding))
+        print("Error          :", str(exc))
+        print("=" * 70)
 
-    document = (
-        document.strip()
-        if document
-        else None
-    )
+        return {
+            "contexts": [],
+            "results": [],
+            "match_type": "none",
+            "best_score": 0.0,
+        }
 
-    user_question = (
-        user_question.strip()
-        if user_question
-        else ""
-    )
+    if len(query_embedding) != 1536:
 
-    # =========================================================
-    # VECTOR
-    # =========================================================
-
-    vector = [
-        float(value)
-        for value in query_embedding
-    ]
-
-    if len(vector) != 1536:
         raise ValueError(
-            "Invalid query embedding dimension. "
-            f"Expected 1536, got {len(vector)}."
+            f"Expected 1536-dimensional embedding, "
+            f"got {len(query_embedding)} dimensions."
         )
 
-    # =========================================================
-    # BUILD METADATA FILTERS
-    # =========================================================
-
-    filters = []
-
-    params = []
+    # PostgreSQL / pgvector accepts this format for vector casting.
+    embedding_string = (
+        "["
+        + ",".join(
+            str(value)
+            for value in query_embedding
+        )
+        + "]"
+    )
 
     # ---------------------------------------------------------
-    # Company
+    # Build metadata filters
     # ---------------------------------------------------------
+
+    metadata_conditions = []
+    metadata_params = []
 
     if company_name:
-
-        filters.append(
-            """
-            LOWER(t.company_name)
-            = LOWER(%s)
-            """
+        metadata_conditions.append(
+            "LOWER(t.company_name) = LOWER(%s)"
         )
-
-        params.append(company_name)
-
-    # ---------------------------------------------------------
-    # SEC number
-    # ---------------------------------------------------------
+        metadata_params.append(company_name)
 
     if sec_no:
-
-        filters.append(
-            """
-            LOWER(t.sec_no)
-            = LOWER(%s)
-            """
+        metadata_conditions.append(
+            "LOWER(t.sec_no) = LOWER(%s)"
         )
-
-        params.append(sec_no)
-
-    # ---------------------------------------------------------
-    # Form type
-    # ---------------------------------------------------------
+        metadata_params.append(sec_no)
 
     if form_type:
-
-        filters.append(
-            """
-            LOWER(t.form_type)
-            = LOWER(%s)
-            """
+        metadata_conditions.append(
+            "LOWER(t.form_type) = LOWER(%s)"
         )
-
-        params.append(form_type)
-
-    # ---------------------------------------------------------
-    # Period covered
-    # ---------------------------------------------------------
+        metadata_params.append(form_type)
 
     if period_covered:
-
-        filters.append(
-            """
-            LOWER(t.period_covered)
-            = LOWER(%s)
-            """
+        metadata_conditions.append(
+            "LOWER(t.period_covered) = LOWER(%s)"
         )
-
-        params.append(period_covered)
-
-    # ---------------------------------------------------------
-    # Document reference
-    #
-    # Search against both title and filename.
-    # ---------------------------------------------------------
+        metadata_params.append(period_covered)
 
     if document:
-
-        filters.append(
+        metadata_conditions.append(
             """
             (
                 LOWER(t.topic_title) LIKE LOWER(%s)
-                OR
-                LOWER(t.file_name) LIKE LOWER(%s)
+                OR LOWER(t.file_name) LIKE LOWER(%s)
             )
             """
         )
 
         document_pattern = f"%{document}%"
 
-        params.extend([
+        metadata_params.extend([
             document_pattern,
             document_pattern,
         ])
 
-    # =========================================================
-    # WHERE CLAUSE
-    # =========================================================
-
-    filters.append(
-        "d.embedding IS NOT NULL"
+    # Always have a valid WHERE clause.
+    metadata_where = " AND ".join(
+        metadata_conditions
     )
 
-    where_clause = (
-        "WHERE "
-        + " AND ".join(filters)
-    )
+    if metadata_where:
+        metadata_where = "WHERE " + metadata_where
 
-    # =========================================================
-    # FULL-TEXT SEARCH
-    # =========================================================
-
-    # plainto_tsquery is safer than directly inserting
-    # user input into tsquery syntax.
-
-    fts_expression = """
-        plainto_tsquery(
-            'english',
-            %s
-        )
-    """
-
-    # =========================================================
-    # SQL
-    # =========================================================
+    # ---------------------------------------------------------
+    # PostgreSQL query
+    # ---------------------------------------------------------
+    #
+    # base_documents
+    #     Applies metadata filtering once.
+    #
+    # vector_candidates
+    #     Gets the best semantic matches independently.
+    #
+    # fts_candidates
+    #     Gets the best keyword matches independently.
+    #
+    # candidate_pool
+    #     Combines both result sets.
+    #
+    # candidate_scores
+    #     Deduplicates documents that appeared in both.
+    #
+    # final ranking
+    #     Applies the hybrid score.
+    #
+    # ---------------------------------------------------------
 
     sql = f"""
-        WITH ranked_documents AS (
-
+        WITH base_documents AS (
             SELECT
-
                 d.id,
-                d.kx_topic_id,
                 d.content,
                 d.page_number,
                 d.section_name,
                 d.chunk_index,
                 d.metadata,
+                d.embedding,
+                d.search_vector,
 
+                t.id AS kx_topic_id,
                 t.topic_title,
                 t.file_name,
                 t.company_name,
                 t.sec_no,
                 t.form_type,
-                t.period_covered,
-
-                ------------------------------------------------
-                -- VECTOR DISTANCE
-                ------------------------------------------------
-
-                d.embedding <=> %s::vector
-                    AS vector_distance,
-
-                ------------------------------------------------
-                -- VECTOR SIMILARITY
-                --
-                -- cosine distance:
-                --
-                -- 0 = identical
-                -- 1 = very different
-                --
-                -- Convert it to similarity.
-                ------------------------------------------------
-
-                (
-                    1 - (
-                        d.embedding <=> %s::vector
-                    )
-                ) AS vector_score,
-
-                ------------------------------------------------
-                -- FULL TEXT SCORE
-                ------------------------------------------------
-
-                ts_rank_cd(
-                    d.search_vector,
-                    {fts_expression}
-                ) AS text_score
+                t.period_covered
 
             FROM sec_document d
 
             INNER JOIN kx_topics t
                 ON t.id = d.kx_topic_id
 
-            {where_clause}
+            {metadata_where}
 
+            AND d.embedding IS NOT NULL
+        ),
+
+        vector_candidates AS (
+            SELECT
+                bd.*,
+
+                1 - (
+                    bd.embedding <=> %s::vector
+                ) AS vector_score,
+
+                NULL::double precision AS text_score
+
+            FROM base_documents bd
+
+            ORDER BY
+                bd.embedding <=> %s::vector
+
+            LIMIT %s
+        ),
+
+        fts_candidates AS (
+            SELECT
+                bd.*,
+
+                NULL::double precision AS vector_score,
+
+                ts_rank_cd(
+                    bd.search_vector,
+                    plainto_tsquery(
+                        'english',
+                        %s
+                    )
+                ) AS text_score
+
+            FROM base_documents bd
+
+            WHERE
+                bd.search_vector IS NOT NULL
+                AND bd.search_vector @@ plainto_tsquery(
+                    'english',
+                    %s
+                )
+
+            ORDER BY
+                ts_rank_cd(
+                    bd.search_vector,
+                    plainto_tsquery(
+                        'english',
+                        %s
+                    )
+                ) DESC
+
+            LIMIT %s
+        ),
+
+        candidate_pool AS (
+            SELECT
+                *
+            FROM vector_candidates
+
+            UNION ALL
+
+            SELECT
+                *
+            FROM fts_candidates
+        ),
+
+        candidate_scores AS (
+            SELECT
+                id,
+
+                MAX(content) AS content,
+                MAX(page_number) AS page_number,
+                MAX(section_name) AS section_name,
+                MAX(chunk_index) AS chunk_index,
+                MAX(metadata::text)::jsonb AS metadata,
+
+                MAX(kx_topic_id) AS kx_topic_id,
+                MAX(topic_title) AS topic_title,
+                MAX(file_name) AS file_name,
+                MAX(company_name) AS company_name,
+                MAX(sec_no) AS sec_no,
+                MAX(form_type) AS form_type,
+                MAX(period_covered) AS period_covered,
+
+                MAX(vector_score) AS vector_score,
+                MAX(text_score) AS text_score
+
+            FROM candidate_pool
+
+            GROUP BY id
         )
 
-        SELECT *
+        SELECT
+            id,
 
-        FROM ranked_documents
+            content,
+            page_number,
+            section_name,
+            chunk_index,
+            metadata,
 
-        ORDER BY
+            kx_topic_id,
+            topic_title,
+            file_name,
+            company_name,
+            sec_no,
+            form_type,
+            period_covered,
+
+            COALESCE(vector_score, 0.0)
+                AS vector_score,
+
+            COALESCE(text_score, 0.0)
+                AS text_score,
 
             (
-                (vector_score * 0.75)
+                COALESCE(vector_score, 0.0) * 0.75
                 +
-                (
-                    LEAST(
-                        text_score,
-                        1.0
-                    ) * 0.25
-                )
-            ) DESC
+                LEAST(
+                    COALESCE(text_score, 0.0),
+                    1.0
+                ) * 0.25
+            ) AS combined_score
+
+        FROM candidate_scores
+
+        ORDER BY
+            combined_score DESC
 
         LIMIT %s
     """
 
-    # =========================================================
-    # PARAMETERS
-    # =========================================================
+    # ---------------------------------------------------------
+    # Query parameters
+    # ---------------------------------------------------------
+    #
+    # base_documents metadata parameters appear first because
+    # the metadata WHERE clause is physically inside the first
+    # CTE.
+    #
+    # Then:
+    #
+    # vector embedding
+    # vector embedding
+    # vector candidate limit
+    #
+    # FTS question
+    # FTS question
+    # FTS question
+    # FTS candidate limit
+    #
+    # final limit
+    # ---------------------------------------------------------
 
-    sql_params = [
+    params = []
 
-        # vector_score
-        vector,
+    params.extend(metadata_params)
 
-        # vector_score again
-        vector,
+    params.extend([
+        embedding_string,
+        embedding_string,
+        candidate_limit,
 
-        # FTS query
         user_question,
+        user_question,
+        user_question,
+        candidate_limit,
 
-        # metadata filters
-        *params,
-
-        # limit
         limit,
-    ]
+    ])
 
-    # =========================================================
-    # EXECUTE
-    # =========================================================
+    # ---------------------------------------------------------
+    # Execute query
+    # ---------------------------------------------------------
 
-    with connections["birai_db"].cursor() as cursor:
+    conn = connections["birai_db"]
 
-        cursor.execute(
-            sql,
-            sql_params
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(sql, params)
+            rows = cursor.fetchall()
+
+            print("=" * 70)
+            print("SEC KNOWLEDGE SEARCH DEBUG")
+            print("company_name   :", company_name)
+            print("sec_no         :", sec_no)
+            print("form_type      :", form_type)
+            print("period_covered :", period_covered)
+            print("document       :", document)
+            print("candidate_limit:", candidate_limit)
+            print("final_limit    :", limit)
+            print("rows reFturned  :", len(rows))
+            print("=" * 70)
+            
+            columns = [
+                column[0]
+                for column in cursor.description
+            ]
+
+    except Exception as exc:
+        print(
+            "SEC KNOWLEDGE SEARCH ERROR:",
+            str(exc),
         )
 
-        columns = [
-            column[0]
-            for column in cursor.description
-        ]
+        raise
 
-        rows = cursor.fetchall()
-
-    # =========================================================
-    # NO RESULTS
-    # =========================================================
-
-    if not rows:
-
-        return {
-            "contexts": [],
-            "results": [],
-            "match_type": "none",
-            "best_score": 0,
-        }
-
-    # =========================================================
-    # PROCESS RESULTS
-    # =========================================================
+    # ---------------------------------------------------------
+    # Convert rows into dictionaries
+    # ---------------------------------------------------------
 
     results = []
 
-    contexts = []
-
     for row in rows:
-
-        record = dict(
-            zip(
-                columns,
-                row
-            )
+        item = dict(
+            zip(columns, row)
         )
 
-        vector_score = (
-            float(
-                record.get(
-                    "vector_score",
-                    0
-                )
-                or 0
-            )
+        # Normalize metadata.
+        metadata = item.get("metadata")
+
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except Exception:
+                metadata = {}
+
+        if metadata is None:
+            metadata = {}
+
+        item["metadata"] = metadata
+
+        # Normalize scores.
+        item["vector_score"] = float(
+            item.get("vector_score") or 0.0
         )
 
-        text_score = (
-            float(
-                record.get(
-                    "text_score",
-                    0
-                )
-                or 0
-            )
+        item["text_score"] = float(
+            item.get("text_score") or 0.0
         )
 
-        combined_score = (
-            (vector_score * 0.75)
-            +
-            (
-                min(text_score, 1.0)
-                * 0.25
-            )
+        item["combined_score"] = float(
+            item.get("combined_score") or 0.0
         )
 
-        # -----------------------------------------------------
-        # Add combined score
-        # -----------------------------------------------------
+        results.append(item)
 
-        record["combined_score"] = combined_score
+    # ---------------------------------------------------------
+    # Determine match type
+    # ---------------------------------------------------------
 
-        # -----------------------------------------------------
-        # Build context
-        # -----------------------------------------------------
-
-        context = (
-            f"Company: "
-            f"{record.get('company_name') or 'Unknown'}\n"
-
-            f"SEC No.: "
-            f"{record.get('sec_no') or 'Unknown'}\n"
-
-            f"Form Type: "
-            f"{record.get('form_type') or 'Unknown'}\n"
-
-            f"Period Covered: "
-            f"{record.get('period_covered') or 'Unknown'}\n"
-
-            f"Document: "
-            f"{record.get('topic_title') or record.get('file_name')}\n"
-
-            f"File: "
-            f"{record.get('file_name') or 'Unknown'}\n"
-
-            f"Page: "
-            f"{record.get('page_number') or 'Unknown'}\n"
-
-            f"Section: "
-            f"{record.get('section_name') or 'Unknown'}\n"
-
-            f"Content:\n"
-            f"{record.get('content') or ''}"
-        )
-
-        record["context"] = context
-
-        contexts.append(context)
-
-        results.append(record)
-
-    # =========================================================
-    # BEST SCORE
-    # =========================================================
-
-    best_score = max(
-        record["combined_score"]
-        for record in results
+    has_vector_match = any(
+        result["vector_score"] > 0
+        for result in results
     )
 
-    # =========================================================
-    # MATCH TYPE
-    # =========================================================
-
-    has_vector = any(
-        record["vector_score"] >= VECTOR_THRESHOLD
-        for record in results
+    has_text_match = any(
+        result["text_score"] > 0
+        for result in results
     )
 
-    has_text = any(
-        record["text_score"] >= TEXT_THRESHOLD
-        for record in results
-    )
-
-    if has_vector and has_text:
-
+    if has_vector_match and has_text_match:
         match_type = "hybrid"
 
-    elif has_vector:
-
+    elif has_vector_match:
         match_type = "vector"
 
-    elif has_text:
-
+    elif has_text_match:
         match_type = "keyword"
 
     else:
-
         match_type = "none"
 
-    # =========================================================
-    # RETURN
-    # =========================================================
+    # ---------------------------------------------------------
+    # Best score
+    # ---------------------------------------------------------
+
+    best_score = (
+        results[0]["combined_score"]
+        if results
+        else 0.0
+    )
+
+    # ---------------------------------------------------------
+    # Build retrieval contexts
+    # ---------------------------------------------------------
+
+    contexts = []
+
+    for result in results:
+        context = {
+            "id": result["id"],
+            "kx_topic_id": result["kx_topic_id"],
+            "content": result["content"],
+            "page_number": result["page_number"],
+            "section_name": result["section_name"],
+            "chunk_index": result["chunk_index"],
+            "metadata": result["metadata"],
+
+            "topic_title": result["topic_title"],
+            "file_name": result["file_name"],
+            "company_name": result["company_name"],
+            "sec_no": result["sec_no"],
+            "form_type": result["form_type"],
+            "period_covered": result["period_covered"],
+
+            "vector_score": result["vector_score"],
+            "text_score": result["text_score"],
+            "combined_score": result["combined_score"],
+        }
+
+        contexts.append(context)
+
+    # ---------------------------------------------------------
+    # Return
+    # ---------------------------------------------------------
 
     return {
         "contexts": contexts,

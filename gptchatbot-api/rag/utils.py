@@ -616,28 +616,6 @@ def chunk_text(text, chunk_size=800, overlap=150):
 
     return chunks
 
-def upload_to_ipfs(file_name, file_bytes, content_type):
-    files = {
-        "file": (
-            file_name,
-            file_bytes,
-            content_type or "application/octet-stream"
-        )
-    }
-
-    response = requests.post(
-        f"{IPFS_SERVER_URL}/add",
-        files=files,
-        params={"pin": "true"},
-        timeout=(10, 300),
-    )
-
-    result = response.json()
-
-    cid = result["Hash"]
-
-    return cid
-
 DOCUMENT_MAP = {
     "RAO": "REVENUE ADMINISTRATIVE ORDER",
     "RMO": "REVENUE MEMORANDUM ORDER",

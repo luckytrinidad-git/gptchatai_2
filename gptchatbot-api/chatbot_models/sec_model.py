@@ -18,6 +18,50 @@ to the SEC Internal Knowledge Base.
 Your primary responsibility is to answer questions using ONLY
 the Internal Knowledge Base context provided to you.
 
+Use the retrieved context as your primary source of truth.
+
+IMPORTANT RULES:
+
+1. Do not invent facts, numbers, dates, percentages, companies,
+   SEC numbers, financial values, or table values.
+
+2. If the requested information exists in STRUCTURED SEC TABLE DATA,
+   prioritize that data over surrounding document text.
+
+3. When answering questions involving tables, calculations,
+   financial figures, ownership, shares, percentages, balances,
+   assets, liabilities, equity, revenue, expenses, or similar
+   structured information, carefully inspect the structured table
+   data before answering.
+
+4. Use normal document context for explanations, definitions,
+   descriptions, and narrative information.
+
+5. If multiple retrieved sources contain relevant information,
+   combine them when they refer to the same filing.
+
+6. Do not treat an irrelevant retrieved document as evidence simply
+   because it was returned by the search system.
+
+7. If the retrieved context does not contain enough information
+   to answer the question, explicitly say that the information
+   could not be found in the Internal SEC Knowledge Base.
+
+8. Preserve the exact meaning and units of values found in the source.
+
+9. Do not silently convert, round, or alter financial values unless
+   the user explicitly asks for a calculation or conversion.
+
+10. When giving a numerical answer derived from a table, show the
+    relevant calculation when useful.
+
+11. When citing information from a table, identify the table or
+    document context when possible.
+
+12. Conversation history may help resolve references such as
+    "that company", "the previous filing", or "that table", but
+    retrieved SEC context takes priority for factual information.
+
 ============================================================
 KNOWLEDGE PRIORITY
 ============================================================
@@ -308,7 +352,6 @@ For questions requesting a table:
 3. References
 """
 
-
 # ============================================================
 # SEC GPT
 # ============================================================
@@ -541,7 +584,139 @@ Citation rules:
 - Include page numbers when available.
 - Do not mention internal retrieval metadata.
 """
+    elif match_type == "structured":
 
+        user_prompt = f"""
+USER QUESTION
+
+{prompt}
+
+============================================================
+
+RETRIEVAL TYPE
+
+STRUCTURED
+
+============================================================
+
+INTERNAL SEC DATABASE CONTEXT
+
+{context}
+
+============================================================
+
+INSTRUCTIONS
+
+• Answer the user's question using the retrieved structured
+  SEC/GIS information above.
+
+• The structured information was extracted from the actual
+  SEC/GIS document stored in the Internal Knowledge Base.
+
+• Treat the retrieved structured information as authoritative.
+
+• Use all relevant structured information necessary to answer
+  the question.
+
+• Preserve the relationships between fields, rows, values,
+  and sections.
+
+• If the user asks for a table, present the relevant information
+  as a clear Markdown table.
+
+• Keep companies, reporting periods, forms, and documents
+  distinct.
+
+• Do not invent missing information.
+
+• Do not calculate or modify values unless the user explicitly
+  asks for a calculation.
+
+• If the retrieved structured context does not contain enough
+  information to answer the question, reply exactly:
+
+"Not found in Internal Knowledge Base."
+
+• Always identify the actual source document used.
+
+Citation rules:
+
+- Cite only documents/sections actually used to formulate
+  the answer.
+- Include page numbers when available.
+- Do not mention table IDs.
+- Do not mention chunk IDs.
+- Do not mention retrieval scores.
+- Do not mention internal retrieval metadata.
+"""
+    elif match_type == "hybrid_structured":
+
+      user_prompt = f"""
+USER QUESTION
+
+{prompt}
+
+============================================================
+
+RETRIEVAL TYPE
+
+HYBRID + STRUCTURED
+
+============================================================
+
+INTERNAL SEC DATABASE CONTEXT
+
+{context}
+
+============================================================
+
+INSTRUCTIONS
+
+• Answer the user's question using the retrieved SEC context.
+
+• The context contains both:
+  1. normal SEC document retrieval results, and
+  2. structured SEC/GIS table data.
+
+• When the question involves tables, financial figures,
+  ownership, shares, percentages, balances, assets,
+  liabilities, equity, revenue, expenses, or other
+  structured information, prioritize the STRUCTURED SEC
+  TABLE DATA when it directly supports the answer.
+
+• Use normal document context for narrative explanations,
+  definitions, qualifications, and surrounding filing context.
+
+• Keep companies, reporting periods, forms, and documents
+  distinct.
+
+• Do not combine values from different companies or
+  reporting periods unless the user explicitly asks for
+  a comparison.
+
+• Do not invent missing information.
+
+• Preserve the exact values and units found in the source.
+
+• If a calculation is requested, use only values present
+  in the retrieved context.
+
+• If the retrieved context does not sufficiently support
+  the answer, reply:
+
+"Not found in Internal Knowledge Base."
+
+• Always identify the actual source document used.
+
+Citation rules:
+
+- Cite only documents/tables actually used.
+- Include page numbers when available.
+- Do not mention table IDs.
+- Do not mention chunk IDs.
+- Do not mention retrieval scores.
+- Do not mention internal database implementation details.
+"""
     else:
 
         user_prompt = f"""
@@ -580,17 +755,26 @@ Do not use outside knowledge.
     # ========================================================
 
     try:
+        
+        print("=" * 100)
+        print("ACTUAL MESSAGES SENT TO SEC GPT")
+        print("=" * 100)
 
+        for i, message in enumerate(messages):
+            content = message.get("content", "")
+
+            print(f"\nMESSAGE {i}")
+            print("ROLE:", message.get("role"))
+            print("CONTENT LENGTH:", len(content))
+            print("CONTENT PREVIEW:")
+            print(content[:500])
+
+        print("=" * 100)
+        
         response = client.chat.completions.create(
-
-            model="gpt-4o-mini",
-
+            model="gpt-5.6-luna",
             messages=messages,
-
-            temperature=0.2,
-
-            max_tokens=1500,
-
+            max_completion_tokens=1500,
         )
 
         return (

@@ -28,7 +28,7 @@ favicon = current_dir / "logo" / "logo.png"
 # CONFIG & BRANDING
 # =========================
 st.set_page_config(
-    page_title="BIR SEC System",
+    page_title="SEC AI",
     page_icon=str(favicon), # Use the small logo as the browser favicon
     initial_sidebar_state='expanded',
     layout="wide"

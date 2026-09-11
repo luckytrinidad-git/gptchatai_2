@@ -1168,6 +1168,24 @@ def ask_sec(
 
     table_results = []
 
+    # ---------------------------------------------------------
+    # Detect "all tables" request
+    # ---------------------------------------------------------
+
+    is_all_tables_request = bool(
+        structured_query.get(
+            "is_all_tables_request",
+            False
+    )
+)
+    print("=" * 70)
+    print("STRUCTURED TABLE REQUEST")
+    print("is_table_request    :", is_table_request)
+    print("is_all_tables_request:", is_all_tables_request)
+    print("structured terms    :", structured_search_terms)
+    print("=" * 70)
+
+
     if is_table_request:
 
         try:
@@ -1289,111 +1307,170 @@ def ask_sec(
                     )
 
                 ################################################
-                # BUILD SEARCH CONDITIONS
-                ################################################
-
-                search_conditions = []
-
-                search_params = []
-
-                for term in structured_search_terms:
-
-                    term = (
-                        str(term)
-                        .strip()
-                    )
-
-                    if not term:
-                        continue
-
-                    search_pattern = (
-                        f"%{term}%"
-                    )
-
-                    search_conditions.append(
-                        """
-                        (
-                            sdt.table_title ILIKE %s
-                            OR sdt.raw_table ILIKE %s
-                            OR sdt.table_data::text ILIKE %s
-                        )
-                        """
-                    )
-
-                    search_params.extend([
-                        search_pattern,
-                        search_pattern,
-                        search_pattern,
-                    ])
-
-                ################################################
-                # TABLE SEARCH
+                # ALL TABLES
                 ################################################
                 #
-                # We don't require an exact match here.
+                # If the user explicitly asks for all tables,
+                # DO NOT apply structured_search_terms.
                 #
-                # A table can still be relevant if only one of
-                # the search terms appears in it.
+                # We retrieve every table belonging to the
+                # identified filing/topic.
                 #
                 ################################################
 
-                if search_conditions:
+                if is_all_tables_request:
 
-                    table_search_clause = (
-                        "("
-                        + " OR ".join(
-                            search_conditions
+                    # -------------------------------------------------
+                    # Require at least one filing/topic filter.
+                    # This prevents accidentally returning every table
+                    # in the entire SEC database.
+                    # -------------------------------------------------
+
+                    if not conditions:
+
+                        print(
+                            "STRUCTURED TABLE SEARCH: "
+                            "all-tables request but no filing filter"
                         )
-                        + ")"
-                    )
 
-                    if where_clause:
-
-                        where_clause += (
-                            " AND "
-                            + table_search_clause
-                        )
+                        table_results = []
 
                     else:
 
-                        where_clause = (
-                            "WHERE "
-                            + table_search_clause
+                        sql = f"""
+                            SELECT
+                                sdt.id,
+                                sdt.kx_topic_id,
+                                sdt.table_index,
+                                sdt.table_title,
+                                sdt.page_start,
+                                sdt.page_end,
+                                sdt.table_data,
+                                sdt.raw_table,
+                                sdt.metadata,
+
+                                kt.company_name,
+                                kt.sec_no,
+                                kt.form_type,
+                                kt.period_covered,
+                                kt.topic_title,
+                                kt.file_name
+
+                            FROM sec_document_tables sdt
+
+                            INNER JOIN kx_topics kt
+                                ON kt.id = sdt.kx_topic_id
+
+                            {where_clause}
+
+                            ORDER BY
+                                sdt.kx_topic_id ASC,
+                                sdt.table_index ASC,
+                                sdt.page_start ASC
+                        """
+
+                        cursor.execute(
+                            sql,
+                            params,
+                        )
+
+                        columns = [
+                            column[0]
+                            for column in cursor.description
+                        ]
+
+                        rows = cursor.fetchall()
+
+                        table_results = [
+                            dict(
+                                zip(
+                                    columns,
+                                    row,
+                                )
+                            )
+                            for row in rows
+                        ]
+
+                        ################################################
+                        # DEBUG
+                        ################################################
+
+                        print(
+                            "=" * 70
+                        )
+
+                        print(
+                            "STRUCTURED TABLE RETRIEVAL - ALL TABLES"
+                        )
+
+                        print(
+                            "Company       :",
+                            filters.get("company_name"),
+                        )
+
+                        print(
+                            "SEC No.       :",
+                            filters.get("sec_no"),
+                        )
+
+                        print(
+                            "Form type     :",
+                            filters.get("form_type"),
+                        )
+
+                        print(
+                            "Period        :",
+                            filters.get("period_covered"),
+                        )
+
+                        print(
+                            "Topic IDs     :",
+                            referenced_topic_ids,
+                        )
+
+                        print(
+                            "Tables found  :",
+                            len(table_results),
+                        )
+
+                        for table in table_results:
+
+                            print(
+                                "TABLE:",
+                                table.get(
+                                    "table_index"
+                                ),
+                                "|",
+                                table.get(
+                                    "table_title"
+                                ),
+                                "| page=",
+                                table.get(
+                                    "page_start"
+                                ),
+                                "-",
+                                table.get(
+                                    "page_end"
+                                ),
+                            )
+
+                        print(
+                            "=" * 70
                         )
 
                 ################################################
-                # NO FILTERS / NO SEARCH TERMS
+                # NORMAL TABLE SEARCH
                 ################################################
-
-                if not where_clause:
-
-                    print(
-                        "STRUCTURED TABLE SEARCH: "
-                        "no filters or search terms"
-                    )
-
-                    table_results = []
 
                 else:
 
                     ################################################
-                    # SCORE TABLES
-                    ################################################
-                    #
-                    # Score:
-                    #
-                    # table_title  = 1.00
-                    # raw_table    = 0.60
-                    # table_data   = 0.40
-                    #
-                    # If multiple terms match, each matching term
-                    # contributes to the score.
-                    #
+                    # BUILD SEARCH CONDITIONS
                     ################################################
 
-                    score_parts = []
+                    search_conditions = []
 
-                    score_params = []
+                    search_params = []
 
                     for term in structured_search_terms:
 
@@ -1409,178 +1486,252 @@ def ask_sec(
                             f"%{term}%"
                         )
 
-                        score_parts.append(
+                        search_conditions.append(
                             """
-                            CASE
-                                WHEN sdt.table_title ILIKE %s
-                                THEN 1.0
-                                ELSE 0.0
-                            END
-                            """
-                        )
-
-                        score_params.append(
-                            search_pattern
-                        )
-
-                        score_parts.append(
-                            """
-                            CASE
-                                WHEN sdt.raw_table ILIKE %s
-                                THEN 0.60
-                                ELSE 0.0
-                            END
-                            """
-                        )
-
-                        score_params.append(
-                            search_pattern
-                        )
-
-                        score_parts.append(
-                            """
-                            CASE
-                                WHEN sdt.table_data::text ILIKE %s
-                                THEN 0.40
-                                ELSE 0.0
-                            END
-                            """
-                        )
-
-                        score_params.append(
-                            search_pattern
-                        )
-
-                    if score_parts:
-
-                        relevance_expression = (
-                            " + ".join(
-                                score_parts
+                            (
+                                sdt.table_title ILIKE %s
+                                OR sdt.raw_table ILIKE %s
+                                OR sdt.table_data::text ILIKE %s
                             )
+                            """
                         )
+
+                        search_params.extend([
+                            search_pattern,
+                            search_pattern,
+                            search_pattern,
+                        ])
+
+                    ################################################
+                    # TABLE SEARCH
+                    ################################################
+
+                    if search_conditions:
+
+                        table_search_clause = (
+                            "("
+                            + " OR ".join(
+                                search_conditions
+                            )
+                            + ")"
+                        )
+
+                        if where_clause:
+
+                            where_clause += (
+                                " AND "
+                                + table_search_clause
+                            )
+
+                        else:
+
+                            where_clause = (
+                                "WHERE "
+                                + table_search_clause
+                            )
+
+                    ################################################
+                    # NO FILTERS / NO SEARCH TERMS
+                    ################################################
+
+                    if not where_clause:
+
+                        print(
+                            "STRUCTURED TABLE SEARCH: "
+                            "no filters or search terms"
+                        )
+
+                        table_results = []
 
                     else:
 
-                        relevance_expression = "0.0"
+                        ################################################
+                        # SCORE TABLES
+                        ################################################
 
-                    ################################################
-                    # EXECUTE
-                    ################################################
+                        score_parts = []
 
-                    sql = f"""
-                        SELECT
-                            sdt.id,
-                            sdt.kx_topic_id,
-                            sdt.table_index,
-                            sdt.table_title,
-                            sdt.page_start,
-                            sdt.page_end,
-                            sdt.table_data,
-                            sdt.raw_table,
-                            sdt.metadata,
+                        score_params = []
 
-                            kt.company_name,
-                            kt.sec_no,
-                            kt.form_type,
-                            kt.period_covered,
-                            kt.topic_title,
-                            kt.file_name,
+                        for term in structured_search_terms:
 
-                            (
-                                {relevance_expression}
-                            ) AS relevance_score
-
-                        FROM sec_document_tables sdt
-
-                        INNER JOIN kx_topics kt
-                            ON kt.id = sdt.kx_topic_id
-
-                        {where_clause}
-
-                        ORDER BY
-                            relevance_score DESC,
-                            sdt.page_start ASC,
-                            sdt.table_index ASC
-
-                        LIMIT 10
-                    """
-
-                    # IMPORTANT:
-                    #
-                    # Parameters are ordered according to where_clause
-                    # first, followed by parameters used by the SELECT
-                    # scoring expression.
-                    #
-                    final_params = (
-                        score_params
-                        + params
-                        + search_params
-                    )
-
-                    cursor.execute(
-                        sql,
-                        final_params,
-                    )
-
-                    columns = [
-                        column[0]
-                        for column in cursor.description
-                    ]
-
-                    rows = cursor.fetchall()
-
-                    table_results = [
-                        dict(
-                            zip(
-                                columns,
-                                row,
+                            term = (
+                                str(term)
+                                .strip()
                             )
+
+                            if not term:
+                                continue
+
+                            search_pattern = (
+                                f"%{term}%"
+                            )
+
+                            score_parts.append(
+                                """
+                                CASE
+                                    WHEN sdt.table_title ILIKE %s
+                                    THEN 1.0
+                                    ELSE 0.0
+                                END
+                                """
+                            )
+
+                            score_params.append(
+                                search_pattern
+                            )
+
+                            score_parts.append(
+                                """
+                                CASE
+                                    WHEN sdt.raw_table ILIKE %s
+                                    THEN 0.60
+                                    ELSE 0.0
+                                END
+                                """
+                            )
+
+                            score_params.append(
+                                search_pattern
+                            )
+
+                            score_parts.append(
+                                """
+                                CASE
+                                    WHEN sdt.table_data::text ILIKE %s
+                                    THEN 0.40
+                                    ELSE 0.0
+                                END
+                                """
+                            )
+
+                            score_params.append(
+                                search_pattern
+                            )
+
+                        if score_parts:
+
+                            relevance_expression = (
+                                " + ".join(
+                                    score_parts
+                                )
+                            )
+
+                        else:
+
+                            relevance_expression = "0.0"
+
+                        ################################################
+                        # EXECUTE
+                        ################################################
+
+                        sql = f"""
+                            SELECT
+                                sdt.id,
+                                sdt.kx_topic_id,
+                                sdt.table_index,
+                                sdt.table_title,
+                                sdt.page_start,
+                                sdt.page_end,
+                                sdt.table_data,
+                                sdt.raw_table,
+                                sdt.metadata,
+
+                                kt.company_name,
+                                kt.sec_no,
+                                kt.form_type,
+                                kt.period_covered,
+                                kt.topic_title,
+                                kt.file_name,
+
+                                (
+                                    {relevance_expression}
+                                ) AS relevance_score
+
+                            FROM sec_document_tables sdt
+
+                            INNER JOIN kx_topics kt
+                                ON kt.id = sdt.kx_topic_id
+
+                            {where_clause}
+
+                            ORDER BY
+                                relevance_score DESC,
+                                sdt.page_start ASC,
+                                sdt.table_index ASC
+
+                        """
+
+                        final_params = (
+                            score_params
+                            + params
+                            + search_params
                         )
-                        for row in rows
-                    ]
 
-                    ################################################
-                    # DEBUG
-                    ################################################
+                        cursor.execute(
+                            sql,
+                            final_params,
+                        )
 
-                    print(
-                        "=" * 70
-                    )
+                        columns = [
+                            column[0]
+                            for column in cursor.description
+                        ]
 
-                    print(
-                        "STRUCTURED TABLE RETRIEVAL"
-                    )
+                        rows = cursor.fetchall()
 
-                    print(
-                        f"Search terms : "
-                        f"{structured_search_terms}"
-                    )
+                        table_results = [
+                            dict(
+                                zip(
+                                    columns,
+                                    row,
+                                )
+                            )
+                            for row in rows
+                        ]
 
-                    print(
-                        f"Tables found : "
-                        f"{len(table_results)}"
-                    )
-
-                    for table in table_results:
+                        ################################################
+                        # DEBUG
+                        ################################################
 
                         print(
-                            "TABLE:",
-                            table.get(
-                                "table_title"
-                            ),
-                            "| score=",
-                            table.get(
-                                "relevance_score"
-                            ),
-                            "| page=",
-                            table.get(
-                                "page_start"
-                            ),
+                            "=" * 70
                         )
 
-                    print(
-                        "=" * 70
-                    )
+                        print(
+                            "STRUCTURED TABLE RETRIEVAL"
+                        )
+
+                        print(
+                            f"Search terms : "
+                            f"{structured_search_terms}"
+                        )
+
+                        print(
+                            f"Tables found : "
+                            f"{len(table_results)}"
+                        )
+
+                        for table in table_results:
+
+                            print(
+                                "TABLE:",
+                                table.get(
+                                    "table_title"
+                                ),
+                                "| score=",
+                                table.get(
+                                    "relevance_score"
+                                ),
+                                "| page=",
+                                table.get(
+                                    "page_start"
+                                ),
+                            )
+
+                        print(
+                            "=" * 70
+                        )
 
         except Exception as e:
 
@@ -1744,12 +1895,20 @@ Original Extracted Text:
     #######################################################
     # 11C. NORMAL DOCUMENT RETRIEVAL
     #######################################################
-    if query_embedding:
+    if is_all_tables_request:
 
-        try:
+        print("=" * 70)
+        print("SKIPPING NORMAL DOCUMENT RETRIEVAL")
+        print("Reason: ALL TABLES request")
+        print("=" * 70)
 
-            retrieval = (
-                search_sec_knowledge_base(
+    else:
+
+        if query_embedding:
+
+            try:
+
+                retrieval = search_sec_knowledge_base(
                     query_embedding=query_embedding,
 
                     user_question=resolved_prompt,
@@ -1776,49 +1935,53 @@ Original Extracted Text:
 
                     limit=5,
                 )
-            )
 
-            contexts = retrieval.get(
-                "contexts",
-                []
-            )
+                contexts = retrieval.get(
+                    "contexts",
+                    []
+                )
 
-            results = retrieval.get(
-                "results",
-                []
-            )
+                results = retrieval.get(
+                    "results",
+                    []
+                )
 
-            match_type = retrieval.get(
-                "match_type",
-                "none"
-            )
+                match_type = retrieval.get(
+                    "match_type",
+                    "none"
+                )
 
-            best_score = retrieval.get(
-                "best_score",
-                0.0
-            )
-            
-            print("=" * 70)
-            print("RAW SEC RETRIEVAL RESULT")
-            print("contexts   :", len(retrieval.get("contexts", [])))
-            print("results    :", len(retrieval.get("results", [])))
-            print("match_type :", repr(retrieval.get("match_type")))
-            print("best_score :", retrieval.get("best_score"))
-            print("=" * 70)
+                best_score = retrieval.get(
+                    "best_score",
+                    0.0
+                )
 
-        except Exception as e:
+                print("=" * 70)
+                print("RAW SEC RETRIEVAL RESULT")
+                print(
+                    "contexts   :",
+                    len(contexts)
+                )
+                print(
+                    "results    :",
+                    len(results)
+                )
+                print(
+                    "match_type :",
+                    repr(match_type)
+                )
+                print(
+                    "best_score :",
+                    best_score
+                )
+                print("=" * 70)
 
-            print("=" * 70)
+            except Exception as e:
 
-            print(
-                "SEC RETRIEVAL ERROR"
-            )
-
-            print(
-                str(e)
-            )
-
-            print("=" * 70)
+                print("=" * 70)
+                print("SEC RETRIEVAL ERROR")
+                print(str(e))
+                print("=" * 70)
 
 
     #######################################################
@@ -2037,7 +2200,7 @@ Original Extracted Text:
     try:
         print("VALUE OF NO DOCS FOUND: ", no_docs_found)
         
-        if no_docs_found:
+        if no_docs_found and not is_all_tables_request:
             response = sec_openai_gpt(
                 prompt=resolved_prompt,
                 history=history,

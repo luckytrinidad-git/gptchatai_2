@@ -756,27 +756,12 @@ Do not use outside knowledge.
 
     try:
         
-        print("=" * 100)
-        print("ACTUAL MESSAGES SENT TO SEC GPT")
-        print("=" * 100)
-
-        for i, message in enumerate(messages):
-            content = message.get("content", "")
-
-            print(f"\nMESSAGE {i}")
-            print("ROLE:", message.get("role"))
-            print("CONTENT LENGTH:", len(content))
-            print("CONTENT PREVIEW:")
-            print(content[:500])
-
-        print("=" * 100)
-        
         response = client.chat.completions.create(
             model="gpt-5.6-luna",
             messages=messages,
-            max_completion_tokens=1500,
+            max_completion_tokens=12000,
         )
-
+        
         return (
             response
             .choices[0]

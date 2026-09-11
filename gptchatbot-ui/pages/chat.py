@@ -182,7 +182,7 @@ if prompt := st.chat_input("Ask about anything..."):
                         res_json.get("response") or 
                         res_json.get("output") or 
                         res_json.get("text") or 
-                        "Error: Response format not recognized."
+                        f"Error: Response format not recognized.{res_json}"
                     )
                     conversation_context = res_json.get("conversation_context")
                     status_log = "success"

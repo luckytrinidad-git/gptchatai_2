@@ -38,6 +38,9 @@ CONVERSATION_CONTEXT_SCHEMA = {
                 "is_structured_request": {
                     "type": "boolean"
                 },
+                "is_all_tables_request": {
+                    "type": "boolean"
+                },
 
                 "subject": {
                     "type": "string"
@@ -52,6 +55,7 @@ CONVERSATION_CONTEXT_SCHEMA = {
             },
             "required": [
                 "is_structured_request",
+                "is_all_tables_request",
                 "subject",
                 "search_terms"
             ],
@@ -255,8 +259,29 @@ Examples:
 "Summarize the entire GIS"
 → is_structured_request = false
 
+"Summarize the entire FS"
+→ is_structured_request = false
+
 "Tell me about the company"
 → is_structured_request = false
+
+Also determine if it's asking for all tables or something specific
+
+"Give me all its tables"
+→ is_all_tables_request = true
+
+"Show every table"
+→ is_all_tables_request = true
+
+"List its tables"
+→ is_all_tables_request = true
+
+"Show me statement of financial position
+→ is_all_tables_request = false
+
+"Show me table of stockholders information
+→ is_all_tables_request = false
+
 
 For structured requests, generate a small number of useful
 search terms that may appear in the structured section title,

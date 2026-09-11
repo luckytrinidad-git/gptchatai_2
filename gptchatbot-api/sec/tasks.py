@@ -18,6 +18,7 @@ from sec.extraction.pdf_extractor import (OPENAI_MODEL,
                                           detect_table_pages,
                                           expand_table_pages,
                                           create_table_pages_pdf)
+from sec.utils import remove_nul_chars
 
 import os, json
 
@@ -120,7 +121,7 @@ def ingest_sec_document(
                 document_chunks.append({
                     "page_number": page["page_number"],
                     "chunk_index": chunk_index,
-                    "content": chunk,
+                    "content": remove_nul_chars(chunk),
                     "extraction_method": page[
                         "extraction_method"
                     ],
@@ -325,9 +326,8 @@ def ingest_sec_document(
                         "table_index"
                     ) or table_number
 
-                    table_title = (
-                        table.get("table_title")
-                        or ""
+                    table_title = remove_nul_chars(
+                        table.get("table_title") or ""
                     )
 
                     page_start = table.get(
@@ -338,19 +338,16 @@ def ingest_sec_document(
                         "page_end"
                     )
 
-                    columns = table.get(
-                        "columns",
-                        [],
+                    columns = remove_nul_chars(
+                        table.get("columns", [])
                     )
 
-                    rows = table.get(
-                        "rows",
-                        [],
+                    rows = remove_nul_chars(
+                        table.get("rows", [])
                     )
 
-                    raw_table = (
-                        table.get("raw_table")
-                        or ""
+                    raw_table = remove_nul_chars(
+                        table.get("raw_table") or ""
                     )
 
                     table_data = {

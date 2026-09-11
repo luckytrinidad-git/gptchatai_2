@@ -842,3 +842,25 @@ def search_sec_knowledge_base(
         "match_type": match_type,
         "best_score": best_score,
     }
+    
+def remove_nul_chars(value):
+    """
+    Recursively remove NUL (\x00) characters from strings,
+    including strings nested inside lists/dicts.
+    """
+    if isinstance(value, str):
+        return value.replace("\x00", "")
+
+    if isinstance(value, list):
+        return [
+            remove_nul_chars(item)
+            for item in value
+        ]
+
+    if isinstance(value, dict):
+        return {
+            key: remove_nul_chars(val)
+            for key, val in value.items()
+        }
+
+    return value

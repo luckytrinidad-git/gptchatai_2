@@ -320,6 +320,23 @@ Examples:
 
 These should inherit the most recent relevant company,
 document, form, period, and topic IDs.
+
+referenced_topic_ids handling
+
+The referenced_topic_ids must only refer to the specific filing/document context that the user's current question is referring to.
+
+If the user continues asking about the same form type/document, preserve the existing referenced_topic_ids.
+If the user changes to a different form type for the same company, treat this as a new document context and clear referenced_topic_ids.
+For example:
+Previous context: FORTIS TECHNOLOGIES CORP. — GIS
+User asks: "What is the authorized capital?" → preserve the GIS referenced_topic_ids.
+User then asks: "What about the FS?" → the user has switched from GIS to FS, so set referenced_topic_ids to an empty list [].
+The FS filing should then be resolved using the company/form-type information instead of the previous GIS topic IDs.
+The same rule applies when switching between any different form types, such as GIS → FS, FS → GIS, GIS → AFS, AFS → GIS, etc.
+Do not assume that the same company means the same filing. A company can have multiple filings and form types.
+If the user explicitly identifies a different filing, form type, period, or document, update the document context accordingly and do not retain topic IDs belonging exclusively to the previous filing.
+referenced_topic_ids should represent document identity, not merely company identity.
+When there is uncertainty about whether the user is referring to the previous document or a different form type, prioritize the explicit form type/document mentioned in the user's latest message.
 """
 
     ###########################################################

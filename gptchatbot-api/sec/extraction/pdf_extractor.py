@@ -26,7 +26,7 @@ EMBEDDING_MODEL = os.getenv(
 openai_client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY"),
     max_retries=0,
-    timeout=120.0,
+    timeout=600.0,
 )
 
 

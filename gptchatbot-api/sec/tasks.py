@@ -21,6 +21,7 @@ from sec.extraction.pdf_extractor import (OPENAI_MODEL,
 from sec.utils import remove_nul_chars
 
 import os, json
+import traceback
 
 # =========================================================
 # CELERY INGESTION TASK
@@ -432,6 +433,8 @@ def ingest_sec_document(
             f"SEC ingestion failed "
             f"(topic_id={topic_id}): {exc}"
         )
+
+        traceback.print_exc()
 
         # ---------------------------------------------------------
         # Mark failed
